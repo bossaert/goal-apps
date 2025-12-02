@@ -293,9 +293,9 @@ const columns = [
 // Helpers
 function formatCurrency (val) {
   if (val == null) return '–'
-  const abs = Math.abs(val)
-  const formatted = abs.toLocaleString('en-US', { maximumFractionDigits: 0 })
-  return '$' + formatted
+  const sign = val < 0 ? '-' : ''
+  const abs = Math.abs(val || 0)
+  return sign + '$' + abs.toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
 // incomes: green; expenses: red; deltas based on sign

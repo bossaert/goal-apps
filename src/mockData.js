@@ -149,6 +149,8 @@ export const portfolioRows = [
   {
     "year": 2026,
     "age": 56,
+    "agePrimary": 56,
+    "ageSpouse": 54,
     "starting": 1239800.0,
     "contrib": 30000,
     "growth": 74388.0,
@@ -159,6 +161,8 @@ export const portfolioRows = [
   {
     "year": 2027,
     "age": 57,
+    "agePrimary": 57,
+    "ageSpouse": 55,
     "starting": 1334269.6,
     "contrib": 30000,
     "growth": 80056.18,
@@ -169,6 +173,8 @@ export const portfolioRows = [
   {
     "year": 2028,
     "age": 58,
+    "agePrimary": 58,
+    "ageSpouse": 56,
     "starting": 1433651.62,
     "contrib": 30000,
     "growth": 86019.1,
@@ -179,6 +185,8 @@ export const portfolioRows = [
   {
     "year": 2029,
     "age": 59,
+    "agePrimary": 59,
+    "ageSpouse": 57,
     "starting": 1538201.5,
     "contrib": 30000,
     "growth": 92292.09,
@@ -189,6 +197,8 @@ export const portfolioRows = [
   {
     "year": 2030,
     "age": 60,
+    "agePrimary": 60,
+    "ageSpouse": 58,
     "starting": 1648187.98,
     "contrib": 30000,
     "growth": 98891.28,
@@ -199,6 +209,8 @@ export const portfolioRows = [
   {
     "year": 2031,
     "age": 61,
+    "agePrimary": 61,
+    "ageSpouse": 59,
     "starting": 1763893.76,
     "contrib": 30000,
     "growth": 105833.63,
@@ -209,6 +221,8 @@ export const portfolioRows = [
   {
     "year": 2032,
     "age": 62,
+    "agePrimary": 62,
+    "ageSpouse": 60,
     "starting": 1885616.23,
     "contrib": 30000,
     "growth": 113136.97,
@@ -219,6 +233,8 @@ export const portfolioRows = [
   {
     "year": 2033,
     "age": 63,
+    "agePrimary": 63,
+    "ageSpouse": 61,
     "starting": 2013668.28,
     "contrib": 30000,
     "growth": 120820.1,
@@ -229,6 +245,8 @@ export const portfolioRows = [
   {
     "year": 2034,
     "age": 64,
+    "agePrimary": 64,
+    "ageSpouse": 62,
     "starting": 2148379.03,
     "contrib": 30000,
     "growth": 128902.74,
@@ -239,6 +257,8 @@ export const portfolioRows = [
   {
     "year": 2035,
     "age": 65,
+    "agePrimary": 65,
+    "ageSpouse": 63,
     "starting": 2290094.74,
     "contrib": 0,
     "growth": 91603.79,
@@ -249,6 +269,8 @@ export const portfolioRows = [
   {
     "year": 2036,
     "age": 66,
+    "agePrimary": 66,
+    "ageSpouse": 64,
     "starting": 2288377.77,
     "contrib": 0,
     "growth": 91535.11,
@@ -259,6 +281,8 @@ export const portfolioRows = [
   {
     "year": 2037,
     "age": 67,
+    "agePrimary": 67,
+    "ageSpouse": 65,
     "starting": 2285105.86,
     "contrib": 0,
     "growth": 91404.23,
@@ -269,6 +293,8 @@ export const portfolioRows = [
   {
     "year": 2038,
     "age": 68,
+    "agePrimary": 68,
+    "ageSpouse": 66,
     "starting": 2280199.24,
     "contrib": 0,
     "growth": 91207.97,
@@ -279,6 +305,8 @@ export const portfolioRows = [
   {
     "year": 2039,
     "age": 69,
+    "agePrimary": 69,
+    "ageSpouse": 67,
     "starting": 2273575.02,
     "contrib": 0,
     "growth": 90943.0,
@@ -289,6 +317,8 @@ export const portfolioRows = [
   {
     "year": 2040,
     "age": 70,
+    "agePrimary": 70,
+    "ageSpouse": 68,
     "starting": 2265147.01,
     "contrib": 0,
     "growth": 90605.88,
@@ -299,6 +329,8 @@ export const portfolioRows = [
   {
     "year": 2041,
     "age": 71,
+    "agePrimary": 71,
+    "ageSpouse": 69,
     "starting": 2254825.65,
     "contrib": 0,
     "growth": 90193.03,
@@ -309,6 +341,8 @@ export const portfolioRows = [
   {
     "year": 2042,
     "age": 72,
+    "agePrimary": 72,
+    "ageSpouse": 70,
     "starting": 2242517.89,
     "contrib": 0,
     "growth": 89700.72,
@@ -319,6 +353,8 @@ export const portfolioRows = [
   {
     "year": 2043,
     "age": 73,
+    "agePrimary": 73,
+    "ageSpouse": 71,
     "starting": 2228127.04,
     "contrib": 0,
     "growth": 89125.08,
@@ -329,6 +365,8 @@ export const portfolioRows = [
   {
     "year": 2044,
     "age": 74,
+    "agePrimary": 74,
+    "ageSpouse": 72,
     "starting": 2211552.65,
     "contrib": 0,
     "growth": 88462.11,
@@ -339,6 +377,8 @@ export const portfolioRows = [
   {
     "year": 2045,
     "age": 75,
+    "agePrimary": 75,
+    "ageSpouse": 73,
     "starting": 2192690.39,
     "contrib": 0,
     "growth": 87707.62,
@@ -349,6 +389,8 @@ export const portfolioRows = [
   {
     "year": 2046,
     "age": 76,
+    "agePrimary": 76,
+    "ageSpouse": 74,
     "starting": 2171431.9,
     "contrib": 0,
     "growth": 86857.28,
@@ -359,6 +401,8 @@ export const portfolioRows = [
   {
     "year": 2047,
     "age": 77,
+    "agePrimary": 77,
+    "ageSpouse": 75,
     "starting": 2147664.65,
     "contrib": 0,
     "growth": 85906.59,
@@ -369,6 +413,8 @@ export const portfolioRows = [
   {
     "year": 2048,
     "age": 78,
+    "agePrimary": 78,
+    "ageSpouse": 76,
     "starting": 2121271.79,
     "contrib": 0,
     "growth": 84850.87,
@@ -379,6 +425,8 @@ export const portfolioRows = [
   {
     "year": 2049,
     "age": 79,
+    "agePrimary": 79,
+    "ageSpouse": 77,
     "starting": 2092131.99,
     "contrib": 0,
     "growth": 83685.28,
@@ -389,6 +437,8 @@ export const portfolioRows = [
   {
     "year": 2050,
     "age": 80,
+    "agePrimary": 80,
+    "ageSpouse": 78,
     "starting": 2060119.3,
     "contrib": 0,
     "growth": 82404.77,
@@ -399,6 +449,8 @@ export const portfolioRows = [
   {
     "year": 2051,
     "age": 81,
+    "agePrimary": 81,
+    "ageSpouse": 79,
     "starting": 2025102.99,
     "contrib": 0,
     "growth": 81004.12,
@@ -409,6 +461,8 @@ export const portfolioRows = [
   {
     "year": 2052,
     "age": 82,
+    "agePrimary": 82,
+    "ageSpouse": 80,
     "starting": 1986947.36,
     "contrib": 0,
     "growth": 79477.89,
@@ -419,6 +473,8 @@ export const portfolioRows = [
   {
     "year": 2053,
     "age": 83,
+    "agePrimary": 83,
+    "ageSpouse": 81,
     "starting": 1945511.57,
     "contrib": 0,
     "growth": 77820.46,
@@ -429,6 +485,8 @@ export const portfolioRows = [
   {
     "year": 2054,
     "age": 84,
+    "agePrimary": 84,
+    "ageSpouse": 82,
     "starting": 1900649.47,
     "contrib": 0,
     "growth": 76025.98,
