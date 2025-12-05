@@ -189,8 +189,8 @@
               <q-td :props="props">
                 <span
                   v-if="!isPreRetirement(props.row) && props.row.lifestyleSpending != null"
-                  :class="valueColorClass(props.row.lifestyleSpending, true)">
-                  {{ formatCurrency(props.row.lifestyleSpending) }}
+                  :class="valueColorClass(Math.abs(props.row.lifestyleSpending), true)">
+                  {{ formatCurrency(Math.abs(props.row.lifestyleSpending)) }}
                 </span>
                 <span v-else class="text-grey-6">–</span>
               </q-td>
@@ -312,13 +312,29 @@ function formatCurrency (val) {
 }
 
 // incomes: green; expenses: red; deltas based on sign
-function valueColorClass (val, isExpense) {
-  if (val == null) return 'text-grey-6'
+function valueColorClass (value, isExpense = false) {
+  if (value == null) return ''
+
+  const v = Number(value)
+
+  // income = green, expense = red
   if (isExpense) {
-    return val === 0 ? '' : 'text-negative'
+    return 'text-negative'   // red for all expenses
   }
-  if (val === 0) return ''
-  return val > 0 ? 'text-positive' : 'text-negative'
+
+  return v >= 0 ? 'text-positive' : 'text-negative'
+}
+
+// Helper to compute total target spending (gross = fixed expenses + net spending target)
+function totalTargetSpending (row) {
+  if (!row || row.spendingTarget == null) return null
+
+  const contrib = row.contributions || 0
+  const taxes = row.estimatedTaxes || 0
+  const other = row.otherExpenses || 0
+
+  // Gross target = fixed expenses + desired net spending
+  return contrib + taxes + other + row.spendingTarget
 }
 
 // Chart x-axis labels (year vs age)
@@ -357,10 +373,10 @@ const lifestyleSeries = cashflowRows.map(r => {
   return Math.abs(r.lifestyleSpending)
 })
 
-// Spending Target line (retirement only)
-const spendingTargetSeries = cashflowRows.map(r => {
-  if (isPreRetirement(r) || r.spendingTarget == null) return null
-  return r.spendingTarget
+// Total Target Spending line (retirement only)
+const spendingTargetSeries = cashflowRows.map(row => {
+  if (isPreRetirement(row)) return null
+  return totalTargetSpending(row)
 })
 
 // Retirement indicator helpers
@@ -519,6 +535,10 @@ const fundingChartOptions = computed(() => {
         if (v == null) return '–'
         return formatCurrency(v)
       }
+      const fmtAbs = v => {
+        if (v == null) return '–'
+        return formatCurrency(Math.abs(v))
+      }
 
       let html = `<b>${label}</b><br/><br/>`
       html += '<b>Income</b><br/>'
@@ -533,10 +553,12 @@ const fundingChartOptions = computed(() => {
       html += `Contributions: ${fmt(row.contributions)}<br/>`
       html += `Estimated Taxes: ${fmt(row.estimatedTaxes)}<br/>`
       html += `Other Expenses: ${fmt(row.otherExpenses)}<br/>`
-      html += `Covered Spending: ${fmt(row.lifestyleSpending)}<br/>`
+      html += `Covered Spending: ${fmtAbs(row.lifestyleSpending)}<br/>`
 
       html += '<br/><b>Targets</b><br/>'
-      html += `Spending Target: ${fmt(row.spendingTarget)}<br/>`
+      const totalTarget = totalTargetSpending(row)
+      html += `Total Target Spending: ${fmt(totalTarget)}<br/>`
+      html += `Net Spending Target: ${fmt(row.spendingTarget)}<br/>`
       html += `Under/Over Spending: ${fmt(row.underOverSpending)}<br/>`
 
       return html
@@ -645,9 +667,9 @@ const fundingChartOptions = computed(() => {
       index: 13,
       legendIndex: 13
     },
-    // Spending Target line (not stacked)
+    // Total Target Spending line (not stacked)
     {
-      name: 'Spending Target',
+      name: 'Total Target Spending',
       type: 'spline',
       data: spendingTargetSeries,
       dashStyle: 'ShortDash',
@@ -686,11 +708,11 @@ function buildFundingHtmlLegend () {
     {
       title: 'Expenses',
       seriesNames: [
-        'Spending Target',  // First, will display as "Total Target Spending"
         'Contributions',
         'Estimated Taxes',
         'Other Expenses',
-        'Covered Spending'  // Series name in chart, will display as "Covered Spending"
+        'Covered Spending',
+        'Total Target Spending'
       ]
     }
   ]
@@ -732,7 +754,7 @@ function buildFundingHtmlLegend () {
       }
       
       // Use different symbol styles based on series type
-      if (series.type === 'spline' || series.name === 'Spending Target') {
+      if (series.type === 'spline' || series.name === 'Total Target Spending') {
         // Dashed line for spline series
         symbol.className = 'legend-symbol legend-symbol-line'
         symbol.style.width = '20px'
@@ -764,7 +786,7 @@ function buildFundingHtmlLegend () {
       // Display labels with proper names
       if (name === 'Covered Spending') {
         label.textContent = 'Covered Spending'
-      } else if (name === 'Spending Target') {
+      } else if (name === 'Total Target Spending') {
         label.textContent = 'Total Target Spending'
       } else {
         label.textContent = name
@@ -873,6 +895,8 @@ watch([timelineMode, xCategories, fundingChartOptions], () => {
       })
     }
 
+    // Update both xAxis and the Total Target Spending series
+    // Update xAxis
     chartInstance.update({
       xAxis: {
         categories: categories,
@@ -882,6 +906,17 @@ watch([timelineMode, xCategories, fundingChartOptions], () => {
         plotLines: plotLines
       }
     }, true) // true = redraw
+    
+    // Update Total Target Spending series data
+    const targetSpendingSeries = chartInstance.series.find(s => s.name === 'Total Target Spending')
+    if (targetSpendingSeries) {
+      // Recalculate series data with current cashflowRows
+      const updatedSeries = cashflowRows.map(row => {
+        if (isPreRetirement(row)) return null
+        return totalTargetSpending(row)
+      })
+      targetSpendingSeries.setData(updatedSeries, true)
+    }
     // Rebuild legend after chart update (wait for chart to fully render)
     setTimeout(() => {
       buildFundingHtmlLegend()
