@@ -13,8 +13,12 @@
     </div>
 
     <!-- Chart -->
-    <q-card flat bordered class="q-pa-md q-mb-lg">
-      <div id="funding-chart-container" style="width: 100%; height: 400px;"></div>
+    <q-card flat bordered class="q-pa-md q-mb-lg funding-chart-card">
+      <div class="funding-chart-wrapper">
+        <div id="funding-chart-container" class="funding-chart-container"></div>
+        <!-- HTML legend container -->
+        <div ref="fundingLegend" class="funding-html-legend"></div>
+      </div>
     </q-card>
 
     <!-- Table -->
@@ -30,32 +34,38 @@
             retirement, or target income amount before retirement).
           </div>
         </div>
-
-        <!-- Year / Age toggle -->
-        <div class="row items-center q-gutter-sm">
-          <span class="text-caption text-grey-7">View by:</span>
-          <q-btn-toggle
-            v-model="timelineMode"
-            :options="timelineOptions"
-            dense
-            unelevated
-            color="primary"
-            toggle-color="primary"
-          />
-        </div>
       </q-card-section>
 
       <q-separator />
 
       <q-card-section class="q-pa-none">
         <div class="funding-table-wrapper">
-          <q-table
+          <!-- Year / Age toggle header -->
+          <div class="year-age-header">
+            <q-btn-toggle
+              v-model="timelineMode"
+              rounded
+              unelevated
+              size="sm"
+              color="white"
+              toggle-color="primary"
+              text-color="primary"
+              :options="[
+                { label: 'Age', value: 'age' },
+                { label: 'Year', value: 'year' }
+              ]"
+            />
+          </div>
+
+            <q-table
+            :key="`funding-table-${timelineMode}`"
             :rows="cashflowRows"
-            :columns="columns"
+            :columns="fundingColumns"
             row-key="year"
             flat
             dense
-            :pagination="pagination"
+            :pagination="tablePagination"
+            :rows-per-page-options="[]"
             class="funding-table"
             :row-class="rowClass"
           >
@@ -174,7 +184,7 @@
               </q-td>
             </template>
 
-            <!-- Lifestyle Spending: negative outflow, table should always show a number only in retirement -->
+            <!-- Covered Spending: negative outflow, table should always show a number only in retirement -->
             <template #body-cell-lifestyleSpending="props">
               <q-td :props="props">
                 <span
@@ -217,7 +227,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import Highcharts from 'highcharts'
 import HighchartsExporting from 'highcharts/modules/exporting'
 import HighchartsAccessibility from 'highcharts/modules/accessibility'
@@ -260,17 +270,20 @@ function rowClass (row) {
 }
 
 // Year / Age toggle
-const timelineMode = ref('year')
-const timelineOptions = [
-  { label: 'Year', value: 'year' },
-  { label: 'Age', value: 'age' }
-]
+const timelineMode = ref('age')
+const tablePagination = ref({
+  page: 1,
+  rowsPerPage: 0 // 0 = "display all rows"
+})
 
-const pagination = { rowsPerPage: 20 }
+// Computed label for Year/Age column
+const yearAgeLabel = computed(() =>
+  timelineMode.value === 'age' ? 'Age' : 'Year'
+)
 
-// Table column definitions
-const columns = [
-  { name: 'yearAge', label: 'Year / Age', field: 'yearAge', align: 'left' },
+// Table column definitions (computed to update label dynamically)
+const fundingColumns = computed(() => [
+  { name: 'yearAge', label: yearAgeLabel.value, field: 'yearAge', align: 'left' },
   // incomes
   { name: 'salary', label: 'Salary/Wages', field: 'salaryWages', align: 'right' },
   { name: 'socialSecurity', label: 'Social Security', field: 'socialSecurity', align: 'right' },
@@ -282,13 +295,13 @@ const columns = [
   { name: 'contributions', label: 'Contributions', field: 'contributions', align: 'right' },
   { name: 'estimatedTaxes', label: 'Estimated Taxes', field: 'estimatedTaxes', align: 'right' },
   { name: 'otherExpenses', label: 'Other Expenses', field: 'otherExpenses', align: 'right' },
-  // NEW: lifestyle spending (what income can support)
-  { name: 'lifestyleSpending', label: 'Lifestyle Spending', field: 'lifestyleSpending', align: 'right' },
+  // NEW: Covered Spending (what income can support)
+  { name: 'lifestyleSpending', label: 'Covered Spending', field: 'lifestyleSpending', align: 'right' },
   // NEW: spending target (what client wants)
   { name: 'spendingTarget', label: 'Spending Target', field: 'spendingTarget', align: 'right' },
   // Under/Over Spending (surplus/shortfall)
   { name: 'underOverSpending', label: 'Under/Over Spending', field: 'underOverSpending', align: 'right' }
-]
+])
 
 // Helpers
 function formatCurrency (val) {
@@ -311,7 +324,7 @@ function valueColorClass (val, isExpense) {
 // Chart x-axis labels (year vs age)
 const xCategories = computed(() => {
   if (timelineMode.value === 'year') {
-    return cashflowRows.map(r => r.year)
+    return cashflowRows.map(r => String(r.year))
   }
   return cashflowRows.map(r => {
     const a1 = r.agePrimary
@@ -350,19 +363,32 @@ const spendingTargetSeries = cashflowRows.map(r => {
   return r.spendingTarget
 })
 
+// Retirement indicator helpers
+const client1RetirementYear = 2035
+const client2RetirementYear = 2026
+
+function retirementCategoryIndex (categories, retirementYear) {
+  // Handle both string and number categories
+  const idx = categories.findIndex(cat => {
+    if (typeof cat === 'string') {
+      return cat.includes(String(retirementYear))
+    }
+    return cat === retirementYear
+  })
+  return idx === -1 ? null : idx
+}
+
 // Highcharts options
 const fundingChartOptions = computed(() => {
-  // Find indices for retirement years
-  const client1RetirementYear = 2035
-  const client2RetirementYear = 2026
+  const categories = xCategories.value
   
-  // Find the index in the categories array for each retirement
-  let client1Index = -1
-  let client2Index = -1
+  // Find indices for retirement years
+  let client1Index = null
+  let client2Index = null
   
   if (timelineMode.value === 'year') {
-    client1Index = cashflowRows.findIndex(r => r.year === client1RetirementYear)
-    client2Index = cashflowRows.findIndex(r => r.year === client2RetirementYear)
+    client1Index = retirementCategoryIndex(categories, client1RetirementYear)
+    client2Index = retirementCategoryIndex(categories, client2RetirementYear)
   } else {
     // When viewing by age, find the corresponding age
     const client1Row = cashflowRows.find(r => r.year === client1RetirementYear)
@@ -370,70 +396,98 @@ const fundingChartOptions = computed(() => {
     
     if (client1Row) {
       const age = client1Row.agePrimary != null ? client1Row.agePrimary : client1Row.ageSpouse
-      client1Index = cashflowRows.findIndex(r => {
-        const rAge = r.agePrimary != null ? r.agePrimary : r.ageSpouse
-        return rAge === age
+      client1Index = categories.findIndex(cat => {
+        if (typeof cat === 'string') {
+          return cat.includes(String(age))
+        }
+        return cat === age
       })
+      if (client1Index === -1) client1Index = null
     }
     if (client2Row) {
       const age = client2Row.agePrimary != null ? client2Row.agePrimary : client2Row.ageSpouse
-      client2Index = cashflowRows.findIndex(r => {
-        const rAge = r.agePrimary != null ? r.agePrimary : r.ageSpouse
-        return rAge === age
+      client2Index = categories.findIndex(cat => {
+        if (typeof cat === 'string') {
+          return cat.includes(String(age))
+        }
+        return cat === age
       })
+      if (client2Index === -1) client2Index = null
     }
+  }
+  
+  // Build plotLines array
+  const plotLines = []
+  if (client1Index != null) {
+    plotLines.push({
+      color: '#999',
+      dashStyle: 'ShortDash',
+      width: 2,
+      value: client1Index,
+      zIndex: 5,
+      label: {
+        text: 'Retirement',
+        rotation: 0,
+        align: 'center',
+        verticalAlign: 'top',
+        y: -10,
+        style: {
+          fontSize: '11px',
+          fontWeight: '600',
+          color: '#555'
+        }
+      }
+    })
+  }
+  if (client2Index != null && client2Index !== client1Index) {
+    plotLines.push({
+      color: '#999',
+      dashStyle: 'ShortDash',
+      width: 2,
+      value: client2Index,
+      zIndex: 5,
+      label: {
+        text: 'Retirement',
+        rotation: 0,
+        align: 'center',
+        verticalAlign: 'top',
+        y: -10,
+        style: {
+          fontSize: '11px',
+          fontWeight: '600',
+          color: '#555'
+        }
+      }
+    })
   }
 
   return {
     chart: {
       type: 'column',
-      height: 380
+      height: 380,
+      events: {
+        render () {
+          // Keep HTML legend synchronized on resize or redraw
+          // Use setTimeout to ensure series colors are available
+          setTimeout(() => {
+            buildFundingHtmlLegend()
+          }, 50)
+        }
+      }
     },
     title: {
       text: 'Retirement Funding: Income, Expenses, and Spending Target'
     },
     xAxis: {
-      categories: xCategories.value,
+      categories: categories,
       title: {
         text: timelineMode.value === 'year' ? 'Year' : 'Age'
       },
-      plotLines: [
-        {
-          value: client1Index,
-          color: '#ff6b6b',
-          width: 2,
-          dashStyle: 'Dash',
-          label: {
-            text: 'Client 1 Retirement (2035)',
-            align: 'right',
-            style: {
-              color: '#ff6b6b',
-              fontWeight: 'bold'
-            },
-            x: -5
-          },
-          zIndex: 5
-        },
-        {
-          value: client2Index,
-          color: '#4ecdc4',
-          width: 2,
-          dashStyle: 'Dash',
-          label: {
-            text: 'Client 2 Retirement (2026)',
-            align: 'right',
-            style: {
-              color: '#4ecdc4',
-              fontWeight: 'bold'
-            },
-            x: -5
-          },
-          zIndex: 5
-        }
-      ]
+      plotLines: plotLines
     },
   yAxis: {
     title: { text: 'Annual Amount ($)' },
+    reversedStacks: false,  // ensure last income series (Portfolio) is on top
     labels: {
       formatter () {
         const v = this.value
@@ -444,7 +498,7 @@ const fundingChartOptions = computed(() => {
       }
     }
   },
-  legend: { enabled: true },
+  legend: { enabled: false },
   plotOptions: {
     column: {
       stacking: 'normal'
@@ -479,7 +533,7 @@ const fundingChartOptions = computed(() => {
       html += `Contributions: ${fmt(row.contributions)}<br/>`
       html += `Estimated Taxes: ${fmt(row.estimatedTaxes)}<br/>`
       html += `Other Expenses: ${fmt(row.otherExpenses)}<br/>`
-      html += `Lifestyle Spending: ${fmt(row.lifestyleSpending)}<br/>`
+      html += `Covered Spending: ${fmt(row.lifestyleSpending)}<br/>`
 
       html += '<br/><b>Targets</b><br/>'
       html += `Spending Target: ${fmt(row.spendingTarget)}<br/>`
@@ -489,7 +543,7 @@ const fundingChartOptions = computed(() => {
     }
   },
   series: [
-    // Group headers
+    // Group headers (dummy HTML-legend headers - NO stack property)
     {
       name: 'Incomes',
       type: 'line',
@@ -508,25 +562,96 @@ const fundingChartOptions = computed(() => {
       color: 'transparent',
       tooltip: { enabled: false }
     },
-    // Income stack
-    { name: 'Salary/Wages', type: 'column', data: salarySeries, stack: 'income', legendIndex: 1 },
-    { name: 'Social Security', type: 'column', data: ssSeries, stack: 'income', legendIndex: 2 },
-    { name: 'Pension/Annuity', type: 'column', data: pensionSeries, stack: 'income', legendIndex: 3 },
-    { name: 'Other Income', type: 'column', data: otherIncomeSeries, stack: 'income', legendIndex: 4 },
-    { name: 'RMD', type: 'column', data: rmdSeries, stack: 'income', legendIndex: 5 },
-    { name: 'Portfolio Income', type: 'column', data: portfolioSeries, stack: 'income', legendIndex: 6 },
-    // Expense stack (including Lifestyle Spending)
-    { name: 'Contributions', type: 'column', data: contribSeries, stack: 'expense', legendIndex: 10 },
-    { name: 'Estimated Taxes', type: 'column', data: taxSeries, stack: 'expense', legendIndex: 11 },
-    { name: 'Other Expenses', type: 'column', data: otherExpSeries, stack: 'expense', legendIndex: 12 },
-    { name: 'Lifestyle Spending', type: 'column', data: lifestyleSeries, stack: 'expense', legendIndex: 13 },
-    // Spending Target line (what client wants)
+    // INCOME STACK (bottom → top)
+    {
+      name: 'Salary/Wages',
+      type: 'column',
+      data: salarySeries,
+      stack: 'income',
+      index: 0,
+      legendIndex: 1
+    },
+    {
+      name: 'Social Security',
+      type: 'column',
+      data: ssSeries,
+      stack: 'income',
+      index: 1,
+      legendIndex: 2
+    },
+    {
+      name: 'Pension/Annuity',
+      type: 'column',
+      data: pensionSeries,
+      stack: 'income',
+      index: 2,
+      legendIndex: 3
+    },
+    {
+      name: 'Other Income',
+      type: 'column',
+      data: otherIncomeSeries,
+      stack: 'income',
+      index: 3,
+      legendIndex: 4
+    },
+    {
+      name: 'RMD',
+      type: 'column',
+      data: rmdSeries,
+      stack: 'income',
+      index: 4,
+      legendIndex: 5
+    },
+    {
+      // THIS MUST BE LAST INCOME SERIES → always top of the stack
+      name: 'Portfolio Income',
+      type: 'column',
+      data: portfolioSeries,
+      stack: 'income',
+      index: 5,
+      legendIndex: 6
+    },
+    // EXPENSE STACK (all use 'expense', order doesn't affect incomes)
+    {
+      name: 'Contributions',
+      type: 'column',
+      data: contribSeries,
+      stack: 'expense',
+      index: 10,
+      legendIndex: 10
+    },
+    {
+      name: 'Estimated Taxes',
+      type: 'column',
+      data: taxSeries,
+      stack: 'expense',
+      index: 11,
+      legendIndex: 11
+    },
+    {
+      name: 'Other Expenses',
+      type: 'column',
+      data: otherExpSeries,
+      stack: 'expense',
+      index: 12,
+      legendIndex: 12
+    },
+    {
+      name: 'Covered Spending',
+      type: 'column',
+      data: lifestyleSeries,
+      stack: 'expense',
+      index: 13,
+      legendIndex: 13
+    },
+    // Spending Target line (not stacked)
     {
       name: 'Spending Target',
       type: 'spline',
       data: spendingTargetSeries,
       dashStyle: 'ShortDash',
-      zIndex: 4,
+      zIndex: 5,
       legendIndex: 20
     }
   ]
@@ -535,97 +660,238 @@ const fundingChartOptions = computed(() => {
 
 // Chart instance reference for updates
 let chartInstance = null
+const fundingLegend = ref(null)
+
+// Helper to build HTML legend
+function buildFundingHtmlLegend () {
+  const chart = chartInstance
+  const legendEl = fundingLegend.value
+  if (!chart || !legendEl) return
+
+  // Clear previous legend
+  legendEl.innerHTML = ''
+
+  const groups = [
+    {
+      title: 'Incomes',
+      seriesNames: [
+        'Salary/Wages',
+        'Social Security',
+        'Pension/Annuity',
+        'Other Income',
+        'RMD',
+        'Portfolio Income'
+      ]
+    },
+    {
+      title: 'Expenses',
+      seriesNames: [
+        'Spending Target',  // First, will display as "Total Target Spending"
+        'Contributions',
+        'Estimated Taxes',
+        'Other Expenses',
+        'Covered Spending'  // Series name in chart, will display as "Covered Spending"
+      ]
+    }
+  ]
+
+  groups.forEach(group => {
+    const groupDiv = document.createElement('div')
+    groupDiv.className = 'legend-group'
+
+    const titleEl = document.createElement('div')
+    titleEl.className = 'legend-group-title'
+    titleEl.textContent = group.title
+    groupDiv.appendChild(titleEl)
+
+    group.seriesNames.forEach(name => {
+      const series = chart.series.find(s => s.name === name)
+      if (!series) return
+
+      const item = document.createElement('div')
+      item.className = 'legend-item'
+      if (!series.visible) {
+        item.classList.add('legend-item-hidden')
+      }
+
+      const symbol = document.createElement('span')
+      
+      // Get the series color - try multiple sources
+      let seriesColor = '#000000'
+      if (series.color) {
+        seriesColor = series.color
+      } else if (series.options && series.options.color) {
+        seriesColor = series.options.color
+      } else if (series.userOptions && series.userOptions.color) {
+        seriesColor = series.userOptions.color
+      } else {
+        // Fallback: use Highcharts default colors based on index
+        const defaultColors = Highcharts.getOptions().colors || []
+        const colorIndex = chart.series.indexOf(series) % defaultColors.length
+        seriesColor = defaultColors[colorIndex] || '#7cb5ec'
+      }
+      
+      // Use different symbol styles based on series type
+      if (series.type === 'spline' || series.name === 'Spending Target') {
+        // Dashed line for spline series
+        symbol.className = 'legend-symbol legend-symbol-line'
+        symbol.style.width = '20px'
+        symbol.style.height = '2px'
+        symbol.style.display = 'inline-block'
+        symbol.style.borderTop = `2px dashed ${seriesColor}`
+        symbol.style.borderBottom = 'none'
+        symbol.style.borderLeft = 'none'
+        symbol.style.borderRight = 'none'
+        symbol.style.backgroundColor = 'transparent'
+        symbol.style.verticalAlign = 'middle'
+        symbol.style.marginRight = '0.5rem'
+        symbol.style.marginTop = '0'
+      } else {
+        // Circular dot for column series
+        symbol.className = 'legend-symbol legend-symbol-dot'
+        symbol.style.width = name === 'Covered Spending' ? '16px' : '12px'
+        symbol.style.height = name === 'Covered Spending' ? '16px' : '12px'
+        symbol.style.display = 'inline-block'
+        symbol.style.backgroundColor = seriesColor
+        symbol.style.borderRadius = '50%'
+        symbol.style.marginRight = '0.5rem'
+        symbol.style.flexShrink = '0'
+      }
+      
+      item.appendChild(symbol)
+
+      const label = document.createElement('span')
+      // Display labels with proper names
+      if (name === 'Covered Spending') {
+        label.textContent = 'Covered Spending'
+      } else if (name === 'Spending Target') {
+        label.textContent = 'Total Target Spending'
+      } else {
+        label.textContent = name
+      }
+      item.appendChild(label)
+
+      item.onclick = function () {
+        series.setVisible(!series.visible, false)
+        chart.redraw()
+        item.classList.toggle('legend-item-hidden', !series.visible)
+      }
+
+      groupDiv.appendChild(item)
+    })
+
+    legendEl.appendChild(groupDiv)
+  })
+}
 
 // Render chart after component mounts and when data changes
-onMounted(() => {
+onMounted(async () => {
   if (fundingChartOptions.value && cashflowRows.length > 0) {
     chartInstance = Highcharts.chart('funding-chart-container', fundingChartOptions.value)
+    await nextTick()
+    // Wait a bit for chart to fully render and series colors to be available
+    setTimeout(() => {
+      buildFundingHtmlLegend()
+    }, 100)
   }
 })
 
 // Watch for timeline mode changes and update chart
 watch([timelineMode, xCategories, fundingChartOptions], () => {
   if (chartInstance && cashflowRows.length > 0) {
-    // Recalculate plotLine indices
-    const client1RetirementYear = 2035
-    const client2RetirementYear = 2026
-    let client1Index = -1
-    let client2Index = -1
+    // Recalculate retirement indices for watch
+    const categories = xCategories.value
+    let client1Index = null
+    let client2Index = null
     
     if (timelineMode.value === 'year') {
-      client1Index = cashflowRows.findIndex(r => r.year === client1RetirementYear)
-      client2Index = cashflowRows.findIndex(r => r.year === client2RetirementYear)
+      client1Index = retirementCategoryIndex(categories, client1RetirementYear)
+      client2Index = retirementCategoryIndex(categories, client2RetirementYear)
     } else {
       const client1Row = cashflowRows.find(r => r.year === client1RetirementYear)
       const client2Row = cashflowRows.find(r => r.year === client2RetirementYear)
       
       if (client1Row) {
         const age = client1Row.agePrimary != null ? client1Row.agePrimary : client1Row.ageSpouse
-        client1Index = cashflowRows.findIndex(r => {
-          const rAge = r.agePrimary != null ? r.agePrimary : r.ageSpouse
-          return rAge === age
+        client1Index = categories.findIndex(cat => {
+          if (typeof cat === 'string') return cat.includes(String(age))
+          return cat === age
         })
+        if (client1Index === -1) client1Index = null
       }
       if (client2Row) {
         const age = client2Row.agePrimary != null ? client2Row.agePrimary : client2Row.ageSpouse
-        client2Index = cashflowRows.findIndex(r => {
-          const rAge = r.agePrimary != null ? r.agePrimary : r.ageSpouse
-          return rAge === age
+        client2Index = categories.findIndex(cat => {
+          if (typeof cat === 'string') return cat.includes(String(age))
+          return cat === age
         })
+        if (client2Index === -1) client2Index = null
       }
+    }
+    
+    const plotLines = []
+    if (client1Index != null) {
+      plotLines.push({
+        color: '#999',
+        dashStyle: 'ShortDash',
+        width: 2,
+        value: client1Index,
+        zIndex: 5,
+        label: {
+          text: 'Retirement',
+          rotation: 0,
+          align: 'center',
+          verticalAlign: 'top',
+          y: -10,
+          style: {
+            fontSize: '11px',
+            fontWeight: '600',
+            color: '#555'
+          }
+        }
+      })
+    }
+    if (client2Index != null && client2Index !== client1Index) {
+      plotLines.push({
+        color: '#999',
+        dashStyle: 'ShortDash',
+        width: 2,
+        value: client2Index,
+        zIndex: 5,
+        label: {
+          text: 'Retirement',
+          rotation: 0,
+          align: 'center',
+          verticalAlign: 'top',
+          y: -10,
+          style: {
+            fontSize: '11px',
+            fontWeight: '600',
+            color: '#555'
+          }
+        }
+      })
     }
 
     chartInstance.update({
       xAxis: {
-        categories: xCategories.value,
+        categories: categories,
         title: {
           text: timelineMode.value === 'year' ? 'Year' : 'Age'
         },
-        plotLines: [
-          {
-            value: client1Index,
-            color: '#ff6b6b',
-            width: 2,
-            dashStyle: 'Dash',
-            label: {
-              text: 'Client 1 Retirement (2035)',
-              align: 'right',
-              style: {
-                color: '#ff6b6b',
-                fontWeight: 'bold'
-              },
-              x: -5
-            },
-            zIndex: 5
-          },
-          {
-            value: client2Index,
-            color: '#4ecdc4',
-            width: 2,
-            dashStyle: 'Dash',
-            label: {
-              text: 'Client 2 Retirement (2026)',
-              align: 'right',
-              style: {
-                color: '#4ecdc4',
-                fontWeight: 'bold'
-              },
-              x: -5
-            },
-            zIndex: 5
-          }
-        ]
+        plotLines: plotLines
       }
     }, true) // true = redraw
+    // Rebuild legend after chart update (wait for chart to fully render)
+    setTimeout(() => {
+      buildFundingHtmlLegend()
+    }, 100)
   }
 }, { immediate: false })
 </script>
 
 <style scoped>
-.funding-table-wrapper {
-  max-height: 420px;
-  overflow-y: auto;
-}
+/* funding-table-wrapper: No max-height or overflow - let table size naturally, use browser scroll */
 
 .funding-table thead tr th {
   position: sticky;
@@ -644,5 +910,95 @@ watch([timelineMode, xCategories, fundingChartOptions], () => {
 
 .stage-late {
   background-color: #fff8f0; /* very light orange */
+}
+
+.funding-chart-card {
+  position: relative;
+}
+
+.funding-chart-wrapper {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.funding-chart-container {
+  flex: 1;
+  min-width: 0;
+  height: 400px;
+}
+
+.funding-html-legend {
+  flex-shrink: 0;
+  display: flex;
+  gap: 2rem;
+  font-size: 0.75rem;
+  padding: 0.5rem 0;
+  min-width: 200px;
+}
+
+.legend-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.legend-group-title {
+  font-weight: 600;
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+  color: #333;
+  text-align: center;
+  text-decoration: underline;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 0.1rem 0;
+  user-select: none;
+  line-height: 1.4;
+}
+
+.legend-item span:last-child {
+  color: #333;
+  font-size: 0.75rem;
+}
+
+.legend-item:hover {
+  opacity: 0.8;
+}
+
+.legend-item-hidden {
+  opacity: 0.4;
+}
+
+.legend-symbol {
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.legend-symbol-dot {
+  display: inline-block;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-symbol-line {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.year-age-header {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 0.5rem;
+}
+
+.year-age-toggle .q-btn {
+  font-size: 0.8rem;
 }
 </style>
