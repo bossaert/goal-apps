@@ -14,6 +14,24 @@
 
     <!-- Chart -->
     <q-card flat bordered class="q-pa-md q-mb-lg funding-chart-card">
+      <!-- Funding chart view dropdown -->
+      <div class="row items-center q-mb-md">
+        <div class="col-auto">
+          <q-select
+            v-model="selectedFundingChartType"
+            :options="fundingChartTypeOptions"
+            option-label="label"
+            option-value="value"
+            dense
+            outlined
+            emit-value
+            map-options
+            style="min-width: 260px"
+            label="Funding chart view"
+          />
+        </div>
+      </div>
+
       <div class="funding-chart-wrapper">
         <div id="funding-chart-container" class="funding-chart-container"></div>
         <!-- HTML legend container -->
@@ -276,6 +294,20 @@ const tablePagination = ref({
   rowsPerPage: 0 // 0 = "display all rows"
 })
 
+// Funding chart type dropdown
+// 4 chart types, default to stacked
+const fundingChartTypeOptions = [
+  { label: 'Stacked bar (current)', value: 'stacked' },
+  { label: 'Lines: Total income vs total target', value: 'lines' },
+  { label: 'Clustered bars: Income vs target', value: 'clustered' },
+  { label: 'Area: Total spending vs total target', value: 'area' }
+]
+
+const selectedFundingChartType = ref('stacked')
+
+// Waterfall chart: selected year index (defaults to first retirement year)
+const selectedWaterfallIndex = ref(0)
+
 // Computed label for Year/Age column
 const yearAgeLabel = computed(() =>
   timelineMode.value === 'age' ? 'Age' : 'Year'
@@ -353,31 +385,64 @@ const xCategories = computed(() => {
 })
 
 // Build series arrays - map to correct field names from mockData
+// These are computed so they're reactive and reusable across chart types
 // incomes
-const salarySeries = cashflowRows.map(r => r.salaryWages || 0)
-const ssSeries = cashflowRows.map(r => r.socialSecurity || 0)
-const pensionSeries = cashflowRows.map(r => r.pensionAnnuity || 0)
-const otherIncomeSeries = cashflowRows.map(r => r.otherIncome || 0)
-const rmdSeries = cashflowRows.map(r => r.rmd || 0)
-const portfolioSeries = cashflowRows.map(r => r.portfolioIncome || 0)
+const salarySeries = computed(() => cashflowRows.map(r => r.salaryWages || 0))
+const ssSeries = computed(() => cashflowRows.map(r => r.socialSecurity || 0))
+const pensionSeries = computed(() => cashflowRows.map(r => r.pensionAnnuity || 0))
+const otherIncomeSeries = computed(() => cashflowRows.map(r => r.otherIncome || 0))
+const rmdSeries = computed(() => cashflowRows.map(r => r.rmd || 0))
+const portfolioSeries = computed(() => cashflowRows.map(r => r.portfolioIncome || 0))
 
 // fixed expenses (positive)
-const contribSeries = cashflowRows.map(r => r.contributions || 0)
-const taxSeries = cashflowRows.map(r => r.estimatedTaxes || 0)
-const otherExpSeries = cashflowRows.map(r => r.otherExpenses || 0)
+const contribSeries = computed(() => cashflowRows.map(r => r.contributions || 0))
+const taxSeries = computed(() => cashflowRows.map(r => r.estimatedTaxes || 0))
+const otherExpSeries = computed(() => cashflowRows.map(r => r.otherExpenses || 0))
 
 // lifestyleSpending is stored as NEGATIVE in the data;
 // for the bar height we stack on its absolute value
-const lifestyleSeries = cashflowRows.map(r => {
+const lifestyleSeries = computed(() => cashflowRows.map(r => {
   if (isPreRetirement(r) || r.lifestyleSpending == null) return 0
   return Math.abs(r.lifestyleSpending)
-})
+}))
 
 // Total Target Spending line (retirement only)
-const spendingTargetSeries = cashflowRows.map(row => {
+const spendingTargetSeries = computed(() => cashflowRows.map(row => {
   if (isPreRetirement(row)) return null
   return totalTargetSpending(row)
-})
+}))
+
+// Total income series (sum of all income sources)
+const totalIncomeSeries = computed(() => cashflowRows.map(row => {
+  const salary = row.salaryWages || 0
+  const ss = row.socialSecurity || 0
+  const pension = row.pensionAnnuity || 0
+  const other = row.otherIncome || 0
+  const rmd = row.rmd || 0
+  const portfolio = row.portfolioIncome || 0
+  return salary + ss + pension + other + rmd + portfolio
+}))
+
+// Total target spending series (for all years, not just retirement)
+const totalTargetSeries = computed(() => cashflowRows.map(row => {
+  const contrib = row.contributions || 0
+  const taxes = row.estimatedTaxes || 0
+  const otherExp = row.otherExpenses || 0
+  const target = row.spendingTarget || 0
+  return contrib + taxes + otherExp + target
+}))
+
+// Covered spending series (absolute values for all years)
+const coveredSpendingSeries = computed(() => cashflowRows.map(row => Math.abs(row.lifestyleSpending || 0)))
+
+// Total spending series (Contributions + Estimated taxes + Other expenses + Covered spending)
+const totalSpendingSeries = computed(() => cashflowRows.map(row => {
+  const contrib = row.contributions || 0
+  const taxes = row.estimatedTaxes || 0
+  const otherExp = row.otherExpenses || 0
+  const covered = Math.abs(row.lifestyleSpending || 0)
+  return contrib + taxes + otherExp + covered
+}))
 
 // Retirement indicator helpers
 const client1RetirementYear = 2035
@@ -394,11 +459,8 @@ function retirementCategoryIndex (categories, retirementYear) {
   return idx === -1 ? null : idx
 }
 
-// Highcharts options
-const fundingChartOptions = computed(() => {
-  const categories = xCategories.value
-  
-  // Find indices for retirement years
+// Helper to build retirement plot lines
+function buildRetirementPlotLines (categories) {
   let client1Index = null
   let client2Index = null
   
@@ -476,6 +538,53 @@ const fundingChartOptions = computed(() => {
       }
     })
   }
+  
+  return plotLines
+}
+
+// Tooltip formatter for funding charts
+function fundingTooltipFormatter () {
+  const idx = this.points && this.points.length > 0 ? this.points[0].point.index : 0
+  const row = cashflowRows[idx] || {}
+  const label = this.x
+
+  const fmt = v => {
+    if (v == null) return '–'
+    return formatCurrency(v)
+  }
+  const fmtAbs = v => {
+    if (v == null) return '–'
+    return formatCurrency(Math.abs(v))
+  }
+
+  let html = `<b>${label}</b><br/><br/>`
+  html += '<b>Income</b><br/>'
+  html += `Salary/Wages: ${fmt(row.salaryWages)}<br/>`
+  html += `Social Security: ${fmt(row.socialSecurity)}<br/>`
+  html += `Pension/Annuity: ${fmt(row.pensionAnnuity)}<br/>`
+  html += `Other Income: ${fmt(row.otherIncome)}<br/>`
+  html += `RMD: ${fmt(row.rmd)}<br/>`
+  html += `Portfolio Income: ${fmt(row.portfolioIncome)}<br/>`
+
+  html += '<br/><b>Expenses</b><br/>'
+  html += `Contributions: ${fmt(row.contributions)}<br/>`
+  html += `Estimated Taxes: ${fmt(row.estimatedTaxes)}<br/>`
+  html += `Other Expenses: ${fmt(row.otherExpenses)}<br/>`
+  html += `Covered Spending: ${fmtAbs(row.lifestyleSpending)}<br/>`
+
+  html += '<br/><b>Targets</b><br/>'
+  const totalTarget = totalTargetSpending(row)
+  html += `Total Target Spending: ${fmt(totalTarget)}<br/>`
+  html += `Net Spending Target: ${fmt(row.spendingTarget)}<br/>`
+  html += `Under/Over Spending: ${fmt(row.underOverSpending)}<br/>`
+
+  return html
+}
+
+// Build stacked bar chart options
+function buildStackedFundingOptions () {
+  const categories = xCategories.value
+  const plotLines = buildRetirementPlotLines(categories)
 
   return {
     chart: {
@@ -501,182 +610,497 @@ const fundingChartOptions = computed(() => {
       },
       plotLines: plotLines
     },
-  yAxis: {
-    title: { text: 'Annual Amount ($)' },
-    reversedStacks: false,  // ensure last income series (Portfolio) is on top
-    labels: {
+    yAxis: {
+      title: { text: 'Annual Amount ($)' },
+      reversedStacks: false,  // ensure last income series (Portfolio) is on top
+      labels: {
+        formatter () {
+          const v = this.value
+          const abs = Math.abs(v)
+          if (abs >= 1_000_000) return '$' + (v / 1_000_000).toFixed(1) + 'M'
+          if (abs >= 1_000) return '$' + (v / 1_000).toFixed(1) + 'K'
+          return '$' + Highcharts.numberFormat(v, 0)
+        }
+      }
+    },
+    legend: { enabled: false },
+    plotOptions: {
+      column: {
+        stacking: 'normal'
+      },
+      series: {
+        marker: { enabled: false }
+      }
+    },
+    tooltip: {
+      shared: true,
+      useHTML: true,
+      formatter: fundingTooltipFormatter
+    },
+    series: [
+      // Group headers (dummy HTML-legend headers - NO stack property)
+      {
+        name: 'Incomes',
+        type: 'line',
+        data: [],
+        showInLegend: true,
+        enableMouseTracking: false,
+        color: 'transparent',
+        tooltip: { enabled: false }
+      },
+      {
+        name: 'Expenses',
+        type: 'line',
+        data: [],
+        showInLegend: true,
+        enableMouseTracking: false,
+        color: 'transparent',
+        tooltip: { enabled: false }
+      },
+      // INCOME STACK (bottom → top)
+      {
+        name: 'Salary/Wages',
+        type: 'column',
+        data: salarySeries.value,
+        stack: 'income',
+        index: 0,
+        legendIndex: 1
+      },
+      {
+        name: 'Social Security',
+        type: 'column',
+        data: ssSeries.value,
+        stack: 'income',
+        index: 1,
+        legendIndex: 2
+      },
+      {
+        name: 'Pension/Annuity',
+        type: 'column',
+        data: pensionSeries.value,
+        stack: 'income',
+        index: 2,
+        legendIndex: 3
+      },
+      {
+        name: 'Other Income',
+        type: 'column',
+        data: otherIncomeSeries.value,
+        stack: 'income',
+        index: 3,
+        legendIndex: 4
+      },
+      {
+        name: 'RMD',
+        type: 'column',
+        data: rmdSeries.value,
+        stack: 'income',
+        index: 4,
+        legendIndex: 5
+      },
+      {
+        // THIS MUST BE LAST INCOME SERIES → always top of the stack
+        name: 'Portfolio Income',
+        type: 'column',
+        data: portfolioSeries.value,
+        stack: 'income',
+        index: 5,
+        legendIndex: 6
+      },
+      // EXPENSE STACK (all use 'expense', order doesn't affect incomes)
+      {
+        name: 'Contributions',
+        type: 'column',
+        data: contribSeries.value,
+        stack: 'expense',
+        index: 10,
+        legendIndex: 10
+      },
+      {
+        name: 'Estimated Taxes',
+        type: 'column',
+        data: taxSeries.value,
+        stack: 'expense',
+        index: 11,
+        legendIndex: 11
+      },
+      {
+        name: 'Other Expenses',
+        type: 'column',
+        data: otherExpSeries.value,
+        stack: 'expense',
+        index: 12,
+        legendIndex: 12
+      },
+      {
+        name: 'Covered Spending',
+        type: 'column',
+        data: lifestyleSeries.value,
+        stack: 'expense',
+        index: 13,
+        legendIndex: 13
+      },
+      // Total Target Spending line (not stacked)
+      {
+        name: 'Total Target Spending',
+        type: 'spline',
+        data: spendingTargetSeries.value,
+        dashStyle: 'ShortDash',
+        zIndex: 5,
+        legendIndex: 20
+      }
+    ]
+  }
+}
+
+// Build lines chart options: Total income vs total target
+function buildLinesFundingOptions () {
+  const categories = xCategories.value
+  const plotLines = buildRetirementPlotLines(categories)
+
+  return {
+    chart: {
+      type: 'line',
+      height: 380,
+      events: {
+        render () {
+          // Keep HTML legend synchronized on resize or redraw
+          setTimeout(() => {
+            buildFundingHtmlLegend()
+          }, 50)
+        }
+      }
+    },
+    title: {
+      text: 'Total Income vs Total Target Spending'
+    },
+    xAxis: {
+      categories: categories,
+      title: {
+        text: timelineMode.value === 'year' ? 'Year' : 'Age'
+      },
+      plotLines: plotLines
+    },
+    yAxis: {
+      title: { text: 'Annual Amount ($)' },
+      labels: {
+        formatter () {
+          const v = this.value
+          const abs = Math.abs(v)
+          if (abs >= 1_000_000) return '$' + (v / 1_000_000).toFixed(1) + 'M'
+          if (abs >= 1_000) return '$' + (v / 1_000).toFixed(1) + 'K'
+          return '$' + Highcharts.numberFormat(v, 0)
+        }
+      }
+    },
+    legend: { enabled: false },
+    plotOptions: {
+      series: {
+        marker: { enabled: false }
+      }
+    },
+    tooltip: {
+      shared: true,
+      useHTML: true,
       formatter () {
-        const v = this.value
-        const abs = Math.abs(v)
-        if (abs >= 1_000_000) return '$' + (v / 1_000_000).toFixed(1) + 'M'
-        if (abs >= 1_000) return '$' + (v / 1_000).toFixed(1) + 'K'
-        return '$' + Highcharts.numberFormat(v, 0)
+        const idx = this.points?.[0]?.point?.index ?? 0
+        const yearLabel = this.x
+        const row = cashflowRows[idx]
+
+        return [
+          `<b>${yearLabel}</b>`,
+          `Total income: ${formatCurrency(totalIncomeSeries.value[idx])}`,
+          `Total target spending: ${formatCurrency(totalTargetSeries.value[idx])}`
+        ].join('<br/>')
       }
-    }
-  },
-  legend: { enabled: false },
-  plotOptions: {
-    column: {
-      stacking: 'normal'
     },
-    series: {
-      marker: { enabled: false }
-    }
-  },
-  tooltip: {
-    shared: true,
-    useHTML: true,
-    formatter: function () {
-      const idx = this.points && this.points.length > 0 ? this.points[0].point.index : 0
-      const row = cashflowRows[idx] || {}
-      const label = this.x
-
-      const fmt = v => {
-        if (v == null) return '–'
-        return formatCurrency(v)
+    series: [
+      {
+        name: 'Total income',
+        type: 'line',
+        data: totalIncomeSeries.value
+      },
+      {
+        name: 'Total target spending',
+        type: 'line',
+        data: totalTargetSeries.value,
+        dashStyle: 'ShortDash'
       }
-      const fmtAbs = v => {
-        if (v == null) return '–'
-        return formatCurrency(Math.abs(v))
+    ]
+  }
+}
+
+// Build clustered bars chart options: Income vs target
+function buildClusteredFundingOptions () {
+  const categories = xCategories.value
+  const plotLines = buildRetirementPlotLines(categories)
+
+  return {
+    chart: {
+      type: 'column',
+      height: 380,
+      events: {
+        render () {
+          setTimeout(() => {
+            buildFundingHtmlLegend()
+          }, 50)
+        }
       }
+    },
+    title: {
+      text: 'Total Income vs Total Target Spending'
+    },
+    xAxis: {
+      categories: categories,
+      title: {
+        text: timelineMode.value === 'year' ? 'Year' : 'Age'
+      },
+      plotLines: plotLines
+    },
+    yAxis: {
+      title: { text: 'Annual Amount ($)' },
+      labels: {
+        formatter () {
+          const v = this.value
+          const abs = Math.abs(v)
+          if (abs >= 1_000_000) return '$' + (v / 1_000_000).toFixed(1) + 'M'
+          if (abs >= 1_000) return '$' + (v / 1_000).toFixed(1) + 'K'
+          return '$' + Highcharts.numberFormat(v, 0)
+        }
+      }
+    },
+    legend: { enabled: false },
+    plotOptions: {
+      column: {
+        stacking: undefined,
+        grouping: true
+      },
+      series: {
+        marker: { enabled: false }
+      }
+    },
+    tooltip: {
+      shared: true,
+      useHTML: true,
+      formatter () {
+        const idx = this.points?.[0]?.point?.index ?? 0
+        const row = cashflowRows[idx]
+        const yearLabel = this.x
 
-      let html = `<b>${label}</b><br/><br/>`
-      html += '<b>Income</b><br/>'
-      html += `Salary/Wages: ${fmt(row.salaryWages)}<br/>`
-      html += `Social Security: ${fmt(row.socialSecurity)}<br/>`
-      html += `Pension/Annuity: ${fmt(row.pensionAnnuity)}<br/>`
-      html += `Other Income: ${fmt(row.otherIncome)}<br/>`
-      html += `RMD: ${fmt(row.rmd)}<br/>`
-      html += `Portfolio Income: ${fmt(row.portfolioIncome)}<br/>`
+        const incomeBreakdown = [
+          `Salary/Wages: ${formatCurrency(row.salaryWages || 0)}`,
+          `Social Security: ${formatCurrency(row.socialSecurity || 0)}`,
+          `Pension/Annuity: ${formatCurrency(row.pensionAnnuity || 0)}`,
+          `Other income: ${formatCurrency(row.otherIncome || 0)}`,
+          `RMD: ${formatCurrency(row.rmd || 0)}`,
+          `Portfolio income: ${formatCurrency(row.portfolioIncome || 0)}`
+        ].join('<br/>')
 
-      html += '<br/><b>Expenses</b><br/>'
-      html += `Contributions: ${fmt(row.contributions)}<br/>`
-      html += `Estimated Taxes: ${fmt(row.estimatedTaxes)}<br/>`
-      html += `Other Expenses: ${fmt(row.otherExpenses)}<br/>`
-      html += `Covered Spending: ${fmtAbs(row.lifestyleSpending)}<br/>`
+        const targetBreakdown = [
+          `Contributions: ${formatCurrency(row.contributions || 0)}`,
+          `Estimated taxes: ${formatCurrency(row.estimatedTaxes || 0)}`,
+          `Other expenses: ${formatCurrency(row.otherExpenses || 0)}`,
+          `Net spending target: ${formatCurrency(row.spendingTarget || 0)}`
+        ].join('<br/>')
 
-      html += '<br/><b>Targets</b><br/>'
-      const totalTarget = totalTargetSpending(row)
-      html += `Total Target Spending: ${fmt(totalTarget)}<br/>`
-      html += `Net Spending Target: ${fmt(row.spendingTarget)}<br/>`
-      html += `Under/Over Spending: ${fmt(row.underOverSpending)}<br/>`
+        return [
+          `<b>${yearLabel}</b>`,
+          '<br/><b>Income</b>',
+          `Total income: ${formatCurrency(totalIncomeSeries.value[idx])}`,
+          incomeBreakdown,
+          '<br/><b>Total target spending</b>',
+          `Total: ${formatCurrency(totalTargetSeries.value[idx])}`,
+          targetBreakdown
+        ].join('<br/>')
+      }
+    },
+    series: [
+      {
+        name: 'Total income',
+        type: 'column',
+        data: totalIncomeSeries.value
+      },
+      {
+        name: 'Total target spending',
+        type: 'column',
+        data: totalTargetSeries.value
+      }
+    ]
+  }
+}
 
-      return html
-    }
-  },
-  series: [
-    // Group headers (dummy HTML-legend headers - NO stack property)
-    {
-      name: 'Incomes',
-      type: 'line',
-      data: [],
-      showInLegend: true,
-      enableMouseTracking: false,
-      color: 'transparent',
-      tooltip: { enabled: false }
+// Build area chart options: Covered spending vs target
+function buildAreaFundingOptions () {
+  const categories = xCategories.value
+  const plotLines = buildRetirementPlotLines(categories)
+
+  return {
+    chart: {
+      type: 'area',
+      height: 380,
+      events: {
+        render () {
+          setTimeout(() => {
+            buildFundingHtmlLegend()
+          }, 50)
+        }
+      }
     },
-    {
-      name: 'Expenses',
-      type: 'line',
-      data: [],
-      showInLegend: true,
-      enableMouseTracking: false,
-      color: 'transparent',
-      tooltip: { enabled: false }
+    title: {
+      text: 'Total Spending vs Total Target Spending'
     },
-    // INCOME STACK (bottom → top)
-    {
-      name: 'Salary/Wages',
-      type: 'column',
-      data: salarySeries,
-      stack: 'income',
-      index: 0,
-      legendIndex: 1
+    xAxis: {
+      categories: categories,
+      title: {
+        text: timelineMode.value === 'year' ? 'Year' : 'Age'
+      },
+      plotLines: plotLines
     },
-    {
-      name: 'Social Security',
-      type: 'column',
-      data: ssSeries,
-      stack: 'income',
-      index: 1,
-      legendIndex: 2
+    yAxis: {
+      title: { text: 'Annual Amount ($)' },
+      labels: {
+        formatter () {
+          const v = this.value
+          const abs = Math.abs(v)
+          if (abs >= 1_000_000) return '$' + (v / 1_000_000).toFixed(1) + 'M'
+          if (abs >= 1_000) return '$' + (v / 1_000).toFixed(1) + 'K'
+          return '$' + Highcharts.numberFormat(v, 0)
+        }
+      }
     },
-    {
-      name: 'Pension/Annuity',
-      type: 'column',
-      data: pensionSeries,
-      stack: 'income',
-      index: 2,
-      legendIndex: 3
+    legend: { enabled: false },
+    plotOptions: {
+      series: {
+        marker: { enabled: false }
+      }
     },
-    {
-      name: 'Other Income',
-      type: 'column',
-      data: otherIncomeSeries,
-      stack: 'income',
-      index: 3,
-      legendIndex: 4
+    tooltip: {
+      shared: true,
+      useHTML: true,
+      formatter () {
+        const idx = this.points?.[0]?.point?.index ?? 0
+        const yearLabel = this.x
+
+        return [
+          `<b>${yearLabel}</b>`,
+          `Total spending: ${formatCurrency(totalSpendingSeries.value[idx])}`,
+          `Total target spending: ${formatCurrency(totalTargetSeries.value[idx])}`
+        ].join('<br/>')
+      }
     },
+    legend: { enabled: true },
+    series: [
+      {
+        name: 'Total spending',
+        type: 'area',
+        data: totalSpendingSeries.value,
+        fillOpacity: 0.4
+      },
+      {
+        name: 'Total target spending',
+        type: 'line',
+        data: totalTargetSeries.value,
+        dashStyle: 'ShortDash'
+      }
+    ]
+  }
+}
+
+// Build waterfall series for a given row index
+function buildWaterfallSeriesForIndex (idx) {
+  const row = cashflowRows[idx]
+  if (!row) return []
+
+  const salary = row.salaryWages || 0
+  const ss = row.socialSecurity || 0
+  const pension = row.pensionAnnuity || 0
+  const other = row.otherIncome || 0
+  const rmd = row.rmd || 0
+  const portfolio = row.portfolioIncome || 0
+  const contributions = row.contributions || 0
+  const taxes = row.estimatedTaxes || 0
+  const otherExp = row.otherExpenses || 0
+  const covered = Math.abs(row.lifestyleSpending || 0)
+  const totalTarget = totalTargetSpending(row) || 0
+
+  return [
     {
-      name: 'RMD',
-      type: 'column',
-      data: rmdSeries,
-      stack: 'income',
-      index: 4,
-      legendIndex: 5
-    },
-    {
-      // THIS MUST BE LAST INCOME SERIES → always top of the stack
-      name: 'Portfolio Income',
-      type: 'column',
-      data: portfolioSeries,
-      stack: 'income',
-      index: 5,
-      legendIndex: 6
-    },
-    // EXPENSE STACK (all use 'expense', order doesn't affect incomes)
-    {
-      name: 'Contributions',
-      type: 'column',
-      data: contribSeries,
-      stack: 'expense',
-      index: 10,
-      legendIndex: 10
-    },
-    {
-      name: 'Estimated Taxes',
-      type: 'column',
-      data: taxSeries,
-      stack: 'expense',
-      index: 11,
-      legendIndex: 11
-    },
-    {
-      name: 'Other Expenses',
-      type: 'column',
-      data: otherExpSeries,
-      stack: 'expense',
-      index: 12,
-      legendIndex: 12
-    },
-    {
-      name: 'Covered Spending',
-      type: 'column',
-      data: lifestyleSeries,
-      stack: 'expense',
-      index: 13,
-      legendIndex: 13
-    },
-    // Total Target Spending line (not stacked)
-    {
-      name: 'Total Target Spending',
-      type: 'spline',
-      data: spendingTargetSeries,
-      dashStyle: 'ShortDash',
-      zIndex: 5,
-      legendIndex: 20
+      type: 'waterfall',
+      name: 'Funding breakdown',
+      upColor: '#4caf50',
+      color: '#f44336',
+      data: [
+        { name: 'Salary/Wages', y: salary },
+        { name: 'Social Security', y: ss },
+        { name: 'Pension/Annuity', y: pension },
+        { name: 'Other income', y: other },
+        { name: 'RMD', y: rmd },
+        { name: 'Portfolio income', y: portfolio },
+        { name: 'Total income', isSum: true },
+        { name: 'Contributions', y: -contributions },
+        { name: 'Estimated taxes', y: -taxes },
+        { name: 'Other expenses', y: -otherExp },
+        { name: 'Covered spending', y: -covered },
+        { name: 'Total covered', isSum: true },
+        { name: 'Gap to total target', y: totalTarget - covered }
+      ]
     }
   ]
+}
+
+// Build waterfall chart options: Selected year breakdown
+function buildWaterfallFundingOptions () {
+  const idx = selectedWaterfallIndex.value
+  const categories = xCategories.value
+  const yearLabel = categories[idx] ?? 'Selected year'
+
+  return {
+    chart: {
+      type: 'waterfall',
+      height: 380
+    },
+    title: {
+      text: `Cash Flow Breakdown: ${yearLabel}`
+    },
+    xAxis: {
+      type: 'category',
+      title: { text: yearLabel }
+    },
+    yAxis: {
+      title: { text: 'Amount ($)' },
+      labels: {
+        formatter () {
+          const v = this.value
+          const abs = Math.abs(v)
+          if (abs >= 1_000_000) return '$' + (v / 1_000_000).toFixed(1) + 'M'
+          if (abs >= 1_000) return '$' + (v / 1_000).toFixed(1) + 'K'
+          return '$' + Highcharts.numberFormat(v, 0)
+        }
+      }
+    },
+    tooltip: {
+      pointFormatter () {
+        return `${this.name}: ${formatCurrency(this.y)}`
+      }
+    },
+    legend: { enabled: false },
+    series: buildWaterfallSeriesForIndex(idx)
+  }
+}
+
+// Highcharts options - switches based on selected chart type
+const fundingChartOptions = computed(() => {
+  switch (selectedFundingChartType.value) {
+    case 'stacked':
+      return buildStackedFundingOptions()
+    case 'lines':
+      return buildLinesFundingOptions()
+    case 'clustered':
+      return buildClusteredFundingOptions()
+    case 'area':
+      return buildAreaFundingOptions()
+    default:
+      return buildStackedFundingOptions()
   }
 })
 
@@ -808,6 +1232,12 @@ function buildFundingHtmlLegend () {
 
 // Render chart after component mounts and when data changes
 onMounted(async () => {
+  // Guard against old saved values (e.g., 'waterfall' from previous versions)
+  if (selectedFundingChartType.value === 'waterfall' || 
+      !fundingChartTypeOptions.find(opt => opt.value === selectedFundingChartType.value)) {
+    selectedFundingChartType.value = 'stacked'
+  }
+
   if (fundingChartOptions.value && cashflowRows.length > 0) {
     chartInstance = Highcharts.chart('funding-chart-container', fundingChartOptions.value)
     await nextTick()
@@ -818,106 +1248,20 @@ onMounted(async () => {
   }
 })
 
-// Watch for timeline mode changes and update chart
-watch([timelineMode, xCategories, fundingChartOptions], () => {
-  if (chartInstance && cashflowRows.length > 0) {
-    // Recalculate retirement indices for watch
-    const categories = xCategories.value
-    let client1Index = null
-    let client2Index = null
-    
-    if (timelineMode.value === 'year') {
-      client1Index = retirementCategoryIndex(categories, client1RetirementYear)
-      client2Index = retirementCategoryIndex(categories, client2RetirementYear)
-    } else {
-      const client1Row = cashflowRows.find(r => r.year === client1RetirementYear)
-      const client2Row = cashflowRows.find(r => r.year === client2RetirementYear)
-      
-      if (client1Row) {
-        const age = client1Row.agePrimary != null ? client1Row.agePrimary : client1Row.ageSpouse
-        client1Index = categories.findIndex(cat => {
-          if (typeof cat === 'string') return cat.includes(String(age))
-          return cat === age
-        })
-        if (client1Index === -1) client1Index = null
-      }
-      if (client2Row) {
-        const age = client2Row.agePrimary != null ? client2Row.agePrimary : client2Row.ageSpouse
-        client2Index = categories.findIndex(cat => {
-          if (typeof cat === 'string') return cat.includes(String(age))
-          return cat === age
-        })
-        if (client2Index === -1) client2Index = null
-      }
-    }
-    
-    const plotLines = []
-    if (client1Index != null) {
-      plotLines.push({
-        color: '#999',
-        dashStyle: 'ShortDash',
-        width: 2,
-        value: client1Index,
-        zIndex: 5,
-        label: {
-          text: 'Retirement',
-          rotation: 0,
-          align: 'center',
-          verticalAlign: 'top',
-          y: -10,
-          style: {
-            fontSize: '11px',
-            fontWeight: '600',
-            color: '#555'
-          }
-        }
-      })
-    }
-    if (client2Index != null && client2Index !== client1Index) {
-      plotLines.push({
-        color: '#999',
-        dashStyle: 'ShortDash',
-        width: 2,
-        value: client2Index,
-        zIndex: 5,
-        label: {
-          text: 'Retirement',
-          rotation: 0,
-          align: 'center',
-          verticalAlign: 'top',
-          y: -10,
-          style: {
-            fontSize: '11px',
-            fontWeight: '600',
-            color: '#555'
-          }
-        }
-      })
-    }
+// Watch for chart type, timeline mode, and data changes - recreate chart when type changes
+watch([selectedFundingChartType, timelineMode, xCategories, fundingChartOptions], () => {
+  if (!cashflowRows.length) return
 
-    // Update both xAxis and the Total Target Spending series
-    // Update xAxis
-    chartInstance.update({
-      xAxis: {
-        categories: categories,
-        title: {
-          text: timelineMode.value === 'year' ? 'Year' : 'Age'
-        },
-        plotLines: plotLines
-      }
-    }, true) // true = redraw
-    
-    // Update Total Target Spending series data
-    const targetSpendingSeries = chartInstance.series.find(s => s.name === 'Total Target Spending')
-    if (targetSpendingSeries) {
-      // Recalculate series data with current cashflowRows
-      const updatedSeries = cashflowRows.map(row => {
-        if (isPreRetirement(row)) return null
-        return totalTargetSpending(row)
-      })
-      targetSpendingSeries.setData(updatedSeries, true)
-    }
-    // Rebuild legend after chart update (wait for chart to fully render)
+  // When chart type changes, destroy and recreate the chart
+  if (chartInstance) {
+    chartInstance.destroy()
+    chartInstance = null
+  }
+
+  // Recreate chart with new options
+  if (fundingChartOptions.value) {
+    chartInstance = Highcharts.chart('funding-chart-container', fundingChartOptions.value)
+    // Rebuild legend after chart renders
     setTimeout(() => {
       buildFundingHtmlLegend()
     }, 100)
