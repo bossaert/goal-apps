@@ -19,19 +19,8 @@
     <!-- Table -->
     <q-card flat bordered>
       <q-card-section>
-        <div class="row items-center justify-between q-mb-sm">
-          <div class="text-subtitle2">
-            Annual Lifetime Portfolio Growth
-          </div>
-          <!-- Year / Age toggle -->
-          <q-btn-toggle
-            v-model="timelineMode"
-            :options="timelineOptions"
-            dense
-            color="primary"
-            toggle-color="primary"
-            unelevated
-          />
+        <div class="text-subtitle2 q-mb-sm">
+          Annual Lifetime Portfolio Growth
         </div>
         <div class="text-caption text-grey-7">
           One path (median / P50). Values are shown in nominal dollars; calculations use full precision even where display
@@ -43,13 +32,32 @@
 
       <q-card-section class="q-pa-none">
         <div class="projection-table-wrapper">
+          <!-- Year / Age toggle header -->
+          <div class="year-age-header">
+            <q-btn-toggle
+              v-model="timelineMode"
+              rounded
+              unelevated
+              size="sm"
+              color="white"
+              toggle-color="primary"
+              text-color="primary"
+              :options="[
+                { label: 'Age', value: 'age' },
+                { label: 'Year', value: 'year' }
+              ]"
+            />
+          </div>
+
           <q-table
+            :key="`projection-table-${timelineMode}`"
             :rows="portfolioRows"
             :columns="columns"
             row-key="year"
             flat
             dense
-            :pagination="pagination"
+            :pagination="tablePagination"
+            :rows-per-page-options="[]"
             class="projection-table"
           >
           <!-- First column: Year / Age -->
@@ -58,15 +66,17 @@
               <span v-if="timelineMode === 'year'">
                 {{ props.row.year }}
               </span>
-              <span v-else-if="timelineMode === 'agePrimary'">
-                <span v-if="props.row.agePrimary != null">
-                  Age {{ props.row.agePrimary }}
-                </span>
-                <span v-else class="text-grey-6">–</span>
-              </span>
               <span v-else>
-                <span v-if="props.row.ageSpouse != null">
-                  Age {{ props.row.ageSpouse }}
+                <span v-if="props.row.agePrimary != null || props.row.ageSpouse != null">
+                  <template v-if="props.row.agePrimary != null && props.row.ageSpouse != null">
+                    {{ props.row.agePrimary }} / {{ props.row.ageSpouse }}
+                  </template>
+                  <template v-else-if="props.row.agePrimary != null">
+                    {{ props.row.agePrimary }}
+                  </template>
+                  <template v-else>
+                    {{ props.row.ageSpouse }}
+                  </template>
                 </span>
                 <span v-else class="text-grey-6">–</span>
               </span>
@@ -155,23 +165,31 @@ const projectionP90 = props.results?.projectionP90 || []
 const portfolioRows = props.results?.portfolioRows || []
 
 // --- Year / Age toggle ---
-const timelineMode = ref('year') // 'year' | 'agePrimary' | 'ageSpouse'
+const timelineMode = ref('age')
 
-const timelineOptions = [
-  { label: 'Year', value: 'year' },
-  { label: 'Age – Client 1', value: 'agePrimary' },
-  { label: 'Age – Client 2', value: 'ageSpouse' }
-]
+// Computed label for Year/Age column
+const yearAgeLabel = computed(() =>
+  timelineMode.value === 'age' ? 'Age' : 'Year'
+)
 
 const xCategories = computed(() => {
-  if (timelineMode.value === 'year') return projectionYears
-  if (timelineMode.value === 'agePrimary') {
-    return portfolioRows.map(r => r.agePrimary != null ? r.agePrimary : null)
+  if (timelineMode.value === 'year') {
+    return projectionYears.map(y => String(y))
   }
-  return portfolioRows.map(r => r.ageSpouse != null ? r.ageSpouse : null)
+  return portfolioRows.map(r => {
+    const a1 = r.agePrimary
+    const a2 = r.ageSpouse
+    if (a1 != null && a2 != null) return `${a1} / ${a2}`
+    if (a1 != null) return `${a1}`
+    if (a2 != null) return `${a2}`
+    return ''
+  })
 })
 
-const pagination = { rowsPerPage: 10 }
+const tablePagination = ref({
+  page: 1,
+  rowsPerPage: 0 // 0 = "display all rows"
+})
 
 // --- Display helpers ---
 function formatCurrency (val) {
@@ -195,15 +213,8 @@ function axisCurrencyLabel (value) {
 
 // --- Table columns ---
 const columns = computed(() => {
-  const firstColumnLabel =
-    timelineMode.value === 'year'
-      ? 'Year'
-      : timelineMode.value === 'agePrimary'
-        ? 'Age (Client 1)'
-        : 'Age (Client 2)'
-
   return [
-    { name: 'yearAge', label: firstColumnLabel, field: 'yearAge', align: 'left' },
+    { name: 'yearAge', label: yearAgeLabel.value, field: 'yearAge', align: 'left' },
     { name: 'starting', label: 'Starting Portfolio Value', field: 'starting', align: 'right' },
     { name: 'contrib', label: 'Contributions', field: 'contrib', align: 'right' },
     { name: 'growth', label: 'Investment Growth / Loss (Before Fees)', field: 'growth', align: 'right' },
@@ -217,37 +228,98 @@ const columns = computed(() => {
 // --- Fan chart (P10/P50/P90 + contributions stack) ---
 const rangeData = projectionP10.map((low, idx) => [low, projectionP90[idx]])
 
+// Retirement indicator helpers
+const client1RetirementYear = 2035
+const client2RetirementYear = 2026
+
+function retirementCategoryIndex (categories, retirementYear) {
+  // Handle both string and number categories
+  const idx = categories.findIndex(cat => {
+    if (typeof cat === 'string') {
+      return cat.includes(String(retirementYear))
+    }
+    return cat === retirementYear
+  })
+  return idx === -1 ? null : idx
+}
+
 // MAIN chart options
 const fanChartOptions = computed(() => {
-  // Find indices for retirement years
-  const client1RetirementYear = 2035
-  const client2RetirementYear = 2026
+  const categories = xCategories.value
   
-  // Find the index in the categories array for each retirement
-  let client1Index = -1
-  let client2Index = -1
+  // Find indices for retirement years
+  let client1Index = null
+  let client2Index = null
   
   if (timelineMode.value === 'year') {
-    client1Index = projectionYears.indexOf(client1RetirementYear)
-    client2Index = projectionYears.indexOf(client2RetirementYear)
-  } else if (timelineMode.value === 'agePrimary') {
+    client1Index = retirementCategoryIndex(categories, client1RetirementYear)
+    client2Index = retirementCategoryIndex(categories, client2RetirementYear)
+  } else {
+    // Age mode: categories are like "65 / 63" or "54 / 52"
     // Client 1 retires at age 65
     const client1RetirementAge = 65
-    client1Index = portfolioRows.findIndex(r => r.agePrimary === client1RetirementAge)
-    // For Client 2, find the year 2026 and get Client 1's age at that time
-    const client2YearRow = portfolioRows.find(r => r.year === client2RetirementYear)
-    if (client2YearRow) {
-      client2Index = portfolioRows.findIndex(r => r.agePrimary === client2YearRow.agePrimary)
-    }
-  } else {
+    client1Index = categories.findIndex(cat => {
+      if (typeof cat === 'string') {
+        return cat.includes(String(client1RetirementAge))
+      }
+      return cat === client1RetirementAge
+    })
+    if (client1Index === -1) client1Index = null
+    
     // Client 2 retires at age 54 (in year 2026)
     const client2RetirementAge = 54
-    client2Index = portfolioRows.findIndex(r => r.ageSpouse === client2RetirementAge)
-    // For Client 1, find the year 2035 and get Client 2's age at that time
-    const client1YearRow = portfolioRows.find(r => r.year === client1RetirementYear)
-    if (client1YearRow) {
-      client1Index = portfolioRows.findIndex(r => r.ageSpouse === client1YearRow.ageSpouse)
-    }
+    client2Index = categories.findIndex(cat => {
+      if (typeof cat === 'string') {
+        return cat.includes(String(client2RetirementAge))
+      }
+      return cat === client2RetirementAge
+    })
+    if (client2Index === -1) client2Index = null
+  }
+  
+  // Build plotLines array
+  const plotLines = []
+  if (client1Index != null) {
+    plotLines.push({
+      color: '#999',
+      dashStyle: 'ShortDash',
+      width: 2,
+      value: client1Index,
+      zIndex: 5,
+      label: {
+        text: 'Retirement',
+        rotation: 0,
+        align: 'center',
+        verticalAlign: 'top',
+        y: -10,
+        style: {
+          fontSize: '11px',
+          fontWeight: '600',
+          color: '#555'
+        }
+      }
+    })
+  }
+  if (client2Index != null && client2Index !== client1Index) {
+    plotLines.push({
+      color: '#999',
+      dashStyle: 'ShortDash',
+      width: 2,
+      value: client2Index,
+      zIndex: 5,
+      label: {
+        text: 'Retirement',
+        rotation: 0,
+        align: 'center',
+        verticalAlign: 'top',
+        y: -10,
+        style: {
+          fontSize: '11px',
+          fontWeight: '600',
+          color: '#555'
+        }
+      }
+    })
   }
 
   return {
@@ -259,49 +331,11 @@ const fanChartOptions = computed(() => {
       text: 'Projected Portfolio Value (P10, P50, P90)'
     },
     xAxis: {
-      categories: xCategories.value,
+      categories: categories,
       title: {
-        text:
-          timelineMode.value === 'year'
-            ? 'Year'
-            : timelineMode.value === 'agePrimary'
-              ? 'Age – Client 1'
-              : 'Age – Client 2'
+        text: timelineMode.value === 'year' ? 'Year' : 'Age'
       },
-      plotLines: [
-        {
-          value: client1Index,
-          color: '#ff6b6b',
-          width: 2,
-          dashStyle: 'Dash',
-          label: {
-            text: 'Client 1 Retirement (2035)',
-            align: 'right',
-            style: {
-              color: '#ff6b6b',
-              fontWeight: 'bold'
-            },
-            x: -5
-          },
-          zIndex: 5
-        },
-        {
-          value: client2Index,
-          color: '#4ecdc4',
-          width: 2,
-          dashStyle: 'Dash',
-          label: {
-            text: 'Client 2 Retirement (2026)',
-            align: 'right',
-            style: {
-              color: '#4ecdc4',
-              fontWeight: 'bold'
-            },
-            x: -5
-          },
-          zIndex: 5
-        }
-      ]
+      plotLines: plotLines
     },
   yAxis: {
     title: { text: 'Portfolio Value ($)' },
@@ -412,76 +446,90 @@ onMounted(() => {
 // Watch for timeline mode changes and update chart
 watch([timelineMode, xCategories, fanChartOptions], () => {
   if (chartInstance && portfolioRows.length > 0) {
+    const categories = xCategories.value
+    
     // Recalculate plotLine indices
-    const client1RetirementYear = 2035
-    const client2RetirementYear = 2026
-    let client1Index = -1
-    let client2Index = -1
+    let client1Index = null
+    let client2Index = null
     
     if (timelineMode.value === 'year') {
-      client1Index = projectionYears.indexOf(client1RetirementYear)
-      client2Index = projectionYears.indexOf(client2RetirementYear)
-    } else if (timelineMode.value === 'agePrimary') {
-      const client1RetirementAge = 65
-      client1Index = portfolioRows.findIndex(r => r.agePrimary === client1RetirementAge)
-      const client2YearRow = portfolioRows.find(r => r.year === client2RetirementYear)
-      if (client2YearRow) {
-        client2Index = portfolioRows.findIndex(r => r.agePrimary === client2YearRow.agePrimary)
-      }
+      client1Index = retirementCategoryIndex(categories, client1RetirementYear)
+      client2Index = retirementCategoryIndex(categories, client2RetirementYear)
     } else {
+      // Age mode: categories are like "65 / 63" or "54 / 52"
+      // Client 1 retires at age 65
+      const client1RetirementAge = 65
+      client1Index = categories.findIndex(cat => {
+        if (typeof cat === 'string') {
+          return cat.includes(String(client1RetirementAge))
+        }
+        return cat === client1RetirementAge
+      })
+      if (client1Index === -1) client1Index = null
+      
+      // Client 2 retires at age 54 (in year 2026)
       const client2RetirementAge = 54
-      client2Index = portfolioRows.findIndex(r => r.ageSpouse === client2RetirementAge)
-      const client1YearRow = portfolioRows.find(r => r.year === client1RetirementYear)
-      if (client1YearRow) {
-        client1Index = portfolioRows.findIndex(r => r.ageSpouse === client1YearRow.ageSpouse)
-      }
+      client2Index = categories.findIndex(cat => {
+        if (typeof cat === 'string') {
+          return cat.includes(String(client2RetirementAge))
+        }
+        return cat === client2RetirementAge
+      })
+      if (client2Index === -1) client2Index = null
+    }
+    
+    // Build plotLines array
+    const plotLines = []
+    if (client1Index != null) {
+      plotLines.push({
+        color: '#999',
+        dashStyle: 'ShortDash',
+        width: 2,
+        value: client1Index,
+        zIndex: 5,
+        label: {
+          text: 'Retirement',
+          rotation: 0,
+          align: 'center',
+          verticalAlign: 'top',
+          y: -10,
+          style: {
+            fontSize: '11px',
+            fontWeight: '600',
+            color: '#555'
+          }
+        }
+      })
+    }
+    if (client2Index != null && client2Index !== client1Index) {
+      plotLines.push({
+        color: '#999',
+        dashStyle: 'ShortDash',
+        width: 2,
+        value: client2Index,
+        zIndex: 5,
+        label: {
+          text: 'Retirement',
+          rotation: 0,
+          align: 'center',
+          verticalAlign: 'top',
+          y: -10,
+          style: {
+            fontSize: '11px',
+            fontWeight: '600',
+            color: '#555'
+          }
+        }
+      })
     }
 
     chartInstance.update({
       xAxis: {
-        categories: xCategories.value,
+        categories: categories,
         title: {
-          text:
-            timelineMode.value === 'year'
-              ? 'Year'
-              : timelineMode.value === 'agePrimary'
-                ? 'Age – Client 1'
-                : 'Age – Client 2'
+          text: timelineMode.value === 'year' ? 'Year' : 'Age'
         },
-        plotLines: [
-          {
-            value: client1Index,
-            color: '#ff6b6b',
-            width: 2,
-            dashStyle: 'Dash',
-            label: {
-              text: 'Client 1 Retirement (2035)',
-              align: 'right',
-              style: {
-                color: '#ff6b6b',
-                fontWeight: 'bold'
-              },
-              x: -5
-            },
-            zIndex: 5
-          },
-          {
-            value: client2Index,
-            color: '#4ecdc4',
-            width: 2,
-            dashStyle: 'Dash',
-            label: {
-              text: 'Client 2 Retirement (2026)',
-              align: 'right',
-              style: {
-                color: '#4ecdc4',
-                fontWeight: 'bold'
-              },
-              x: -5
-            },
-            zIndex: 5
-          }
-        ]
+        plotLines: plotLines
       }
     }, true) // true = redraw
   }
@@ -490,8 +538,7 @@ watch([timelineMode, xCategories, fanChartOptions], () => {
 
 <style scoped>
 .projection-table-wrapper {
-  max-height: 400px;          /* whatever height you want */
-  overflow-y: auto;
+  /* No max-height or overflow - let table size naturally, use browser scroll */
   position: relative;
 }
 
@@ -512,5 +559,15 @@ watch([timelineMode, xCategories, fanChartOptions], () => {
   z-index: 10;
   background-color: #ffffff !important;
   box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+.year-age-header {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 0.5rem;
+}
+
+.year-age-toggle .q-btn {
+  font-size: 0.8rem;
 }
 </style>

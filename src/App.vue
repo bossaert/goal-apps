@@ -18,7 +18,7 @@
               indicator-color="primary"
             >
               <q-tab name="projection" label="Projection" />
-              <q-tab name="cashflow" label="Cash Flow" />
+              <q-tab name="funding" label="Funding" />
               <q-tab name="portfolio" label="Portfolio" disable />
             </q-tabs>
 
@@ -41,10 +41,10 @@
                 <Zone3Projection v-else :results="results" />
               </q-tab-panel>
 
-              <q-tab-panel name="cashflow">
+              <q-tab-panel name="funding">
                 <div v-if="loading" class="q-pa-lg text-center">
                   <q-spinner color="primary" size="3em" />
-                  <div class="q-mt-md text-grey-7">Loading cash flow data...</div>
+                  <div class="q-mt-md text-grey-7">Loading funding data...</div>
                 </div>
                 <div v-else-if="error" class="q-pa-lg">
                   <q-banner rounded class="bg-negative text-white">
