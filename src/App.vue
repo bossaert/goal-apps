@@ -18,7 +18,7 @@
               indicator-color="primary"
             >
               <q-tab name="projection" label="Projection" />
-              <q-tab name="cashflow" label="Cash Flow" />
+              <q-tab name="funding" label="Funding" />
               <q-tab name="portfolio" label="Portfolio" disable />
             </q-tabs>
 
@@ -26,11 +26,35 @@
 
             <q-tab-panels v-model="tab" animated>
               <q-tab-panel name="projection">
-                <Zone3Projection />
+                <div v-if="loading" class="q-pa-lg text-center">
+                  <q-spinner color="primary" size="3em" />
+                  <div class="q-mt-md text-grey-7">Loading projection data...</div>
+                </div>
+                <div v-else-if="error" class="q-pa-lg">
+                  <q-banner rounded class="bg-negative text-white">
+                    <template v-slot:avatar>
+                      <q-icon name="error" />
+                    </template>
+                    Error loading data: {{ error }}
+                  </q-banner>
+                </div>
+                <Zone3Projection v-else :results="results" />
               </q-tab-panel>
 
-              <q-tab-panel name="cashflow">
-                <Zone3CashFlow />
+              <q-tab-panel name="funding">
+                <div v-if="loading" class="q-pa-lg text-center">
+                  <q-spinner color="primary" size="3em" />
+                  <div class="q-mt-md text-grey-7">Loading funding data...</div>
+                </div>
+                <div v-else-if="error" class="q-pa-lg">
+                  <q-banner rounded class="bg-negative text-white">
+                    <template v-slot:avatar>
+                      <q-icon name="error" />
+                    </template>
+                    Error loading data: {{ error }}
+                  </q-banner>
+                </div>
+                <Zone3CashFlow v-else :results="results" />
               </q-tab-panel>
 
               <q-tab-panel name="portfolio">
@@ -48,11 +72,16 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useResultsData } from './useResultsData'
 import Zone2Header from './components/Zone2Header.vue'
 import Zone3Projection from './components/Zone3Projection.vue'
 import Zone3CashFlow from './components/Zone3CashFlow.vue'
 
 const tab = ref('projection')
+
+// Fetch results data using the composable
+// TODO: Replace with actual scenario ID when available
+const { loading, error, results } = useResultsData('default-scenario')
 </script>
 
 <style scoped>
