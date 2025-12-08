@@ -968,7 +968,6 @@ function buildAreaFundingOptions () {
         }
       }
     },
-    legend: { enabled: false },
     plotOptions: {
       series: {
         marker: { enabled: false }
