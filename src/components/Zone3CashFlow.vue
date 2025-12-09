@@ -261,27 +261,27 @@ const props = defineProps({
   }
 })
 
-const cashflowRows = props.results.cashflowRows || []
-const retirementStartYear = props.results.retirementStartYear || 2035
+const cashflowRows = computed(() => props.results?.cashflowRows || [])
+const retirementStartYear = computed(() => props.results?.retirementStartYear || 2035)
 
 // Pre-retirement helper
 function isPreRetirement(row) {
-  return retirementStartYear != null && row.year < retirementStartYear
+  return retirementStartYear.value != null && row.year < retirementStartYear.value
 }
 
 // Life-stage ranges for visual marking
-const earlyRetirementEnd = retirementStartYear + 9
-const midRetirementEnd = retirementStartYear + 19
+const earlyRetirementEnd = computed(() => retirementStartYear.value + 9)
+const midRetirementEnd = computed(() => retirementStartYear.value + 19)
 
 // Row class for visual retirement marking (Early, Mid, Late Retirement)
 function rowClass (row) {
-  if (!retirementStartYear) return ''
+  if (!retirementStartYear.value) return ''
 
-  if (row.year < retirementStartYear) return ''            // pre-retirement
-  if (row.year >= retirementStartYear && row.year <= earlyRetirementEnd) {
+  if (row.year < retirementStartYear.value) return ''            // pre-retirement
+  if (row.year >= retirementStartYear.value && row.year <= earlyRetirementEnd.value) {
     return 'stage-early'
   }
-  if (row.year > earlyRetirementEnd && row.year <= midRetirementEnd) {
+  if (row.year > earlyRetirementEnd.value && row.year <= midRetirementEnd.value) {
     return 'stage-mid'
   }
   return 'stage-late'
@@ -372,9 +372,9 @@ function totalTargetSpending (row) {
 // Chart x-axis labels (year vs age)
 const xCategories = computed(() => {
   if (timelineMode.value === 'year') {
-    return cashflowRows.map(r => String(r.year))
+    return cashflowRows.value.map(r => String(r.year))
   }
-  return cashflowRows.map(r => {
+  return cashflowRows.value.map(r => {
     const a1 = r.agePrimary
     const a2 = r.ageSpouse
     if (a1 != null && a2 != null) return `${a1} / ${a2}`
@@ -387,33 +387,33 @@ const xCategories = computed(() => {
 // Build series arrays - map to correct field names from mockData
 // These are computed so they're reactive and reusable across chart types
 // incomes
-const salarySeries = computed(() => cashflowRows.map(r => r.salaryWages || 0))
-const ssSeries = computed(() => cashflowRows.map(r => r.socialSecurity || 0))
-const pensionSeries = computed(() => cashflowRows.map(r => r.pensionAnnuity || 0))
-const otherIncomeSeries = computed(() => cashflowRows.map(r => r.otherIncome || 0))
-const rmdSeries = computed(() => cashflowRows.map(r => r.rmd || 0))
-const portfolioSeries = computed(() => cashflowRows.map(r => r.portfolioIncome || 0))
+const salarySeries = computed(() => cashflowRows.value.map(r => r.salaryWages || 0))
+const ssSeries = computed(() => cashflowRows.value.map(r => r.socialSecurity || 0))
+const pensionSeries = computed(() => cashflowRows.value.map(r => r.pensionAnnuity || 0))
+const otherIncomeSeries = computed(() => cashflowRows.value.map(r => r.otherIncome || 0))
+const rmdSeries = computed(() => cashflowRows.value.map(r => r.rmd || 0))
+const portfolioSeries = computed(() => cashflowRows.value.map(r => r.portfolioIncome || 0))
 
 // fixed expenses (positive)
-const contribSeries = computed(() => cashflowRows.map(r => r.contributions || 0))
-const taxSeries = computed(() => cashflowRows.map(r => r.estimatedTaxes || 0))
-const otherExpSeries = computed(() => cashflowRows.map(r => r.otherExpenses || 0))
+const contribSeries = computed(() => cashflowRows.value.map(r => r.contributions || 0))
+const taxSeries = computed(() => cashflowRows.value.map(r => r.estimatedTaxes || 0))
+const otherExpSeries = computed(() => cashflowRows.value.map(r => r.otherExpenses || 0))
 
 // lifestyleSpending is stored as NEGATIVE in the data;
 // for the bar height we stack on its absolute value
-const lifestyleSeries = computed(() => cashflowRows.map(r => {
+const lifestyleSeries = computed(() => cashflowRows.value.map(r => {
   if (isPreRetirement(r) || r.lifestyleSpending == null) return 0
   return Math.abs(r.lifestyleSpending)
 }))
 
 // Total Target Spending line (retirement only)
-const spendingTargetSeries = computed(() => cashflowRows.map(row => {
+const spendingTargetSeries = computed(() => cashflowRows.value.map(row => {
   if (isPreRetirement(row)) return null
   return totalTargetSpending(row)
 }))
 
 // Total income series (sum of all income sources)
-const totalIncomeSeries = computed(() => cashflowRows.map(row => {
+const totalIncomeSeries = computed(() => cashflowRows.value.map(row => {
   const salary = row.salaryWages || 0
   const ss = row.socialSecurity || 0
   const pension = row.pensionAnnuity || 0
@@ -424,7 +424,7 @@ const totalIncomeSeries = computed(() => cashflowRows.map(row => {
 }))
 
 // Total target spending series (for all years, not just retirement)
-const totalTargetSeries = computed(() => cashflowRows.map(row => {
+const totalTargetSeries = computed(() => cashflowRows.value.map(row => {
   const contrib = row.contributions || 0
   const taxes = row.estimatedTaxes || 0
   const otherExp = row.otherExpenses || 0
@@ -433,10 +433,10 @@ const totalTargetSeries = computed(() => cashflowRows.map(row => {
 }))
 
 // Covered spending series (absolute values for all years)
-const coveredSpendingSeries = computed(() => cashflowRows.map(row => Math.abs(row.lifestyleSpending || 0)))
+const coveredSpendingSeries = computed(() => cashflowRows.value.map(row => Math.abs(row.lifestyleSpending || 0)))
 
 // Total spending series (Contributions + Estimated taxes + Other expenses + Covered spending)
-const totalSpendingSeries = computed(() => cashflowRows.map(row => {
+const totalSpendingSeries = computed(() => cashflowRows.value.map(row => {
   const contrib = row.contributions || 0
   const taxes = row.estimatedTaxes || 0
   const otherExp = row.otherExpenses || 0
@@ -469,8 +469,8 @@ function buildRetirementPlotLines (categories) {
     client2Index = retirementCategoryIndex(categories, client2RetirementYear)
   } else {
     // When viewing by age, find the corresponding age
-    const client1Row = cashflowRows.find(r => r.year === client1RetirementYear)
-    const client2Row = cashflowRows.find(r => r.year === client2RetirementYear)
+    const client1Row = cashflowRows.value.find(r => r.year === client1RetirementYear)
+    const client2Row = cashflowRows.value.find(r => r.year === client2RetirementYear)
     
     if (client1Row) {
       const age = client1Row.agePrimary != null ? client1Row.agePrimary : client1Row.ageSpouse
@@ -544,9 +544,10 @@ function buildRetirementPlotLines (categories) {
 
 // Tooltip formatter for funding charts
 function fundingTooltipFormatter () {
-  const idx = this.points && this.points.length > 0 ? this.points[0].point.index : 0
-  const row = cashflowRows[idx] || {}
   const label = this.x
+  const categories = xCategories.value
+  const idx = categories.indexOf(String(label))
+  const row = cashflowRows.value[idx] || {}
 
   const fmt = v => {
     if (v == null) return '–'
@@ -803,14 +804,15 @@ function buildLinesFundingOptions () {
       shared: true,
       useHTML: true,
       formatter () {
-        const idx = this.points?.[0]?.point?.index ?? 0
         const yearLabel = this.x
-        const row = cashflowRows[idx]
+        const categories = xCategories.value
+        const idx = categories.indexOf(String(yearLabel))
+        const row = cashflowRows.value[idx] || {}
 
         return [
           `<b>${yearLabel}</b>`,
-          `Total income: ${formatCurrency(totalIncomeSeries.value[idx])}`,
-          `Total target spending: ${formatCurrency(totalTargetSeries.value[idx])}`
+          `Total income: ${formatCurrency(totalIncomeSeries.value[idx] || 0)}`,
+          `Total target spending: ${formatCurrency(totalTargetSeries.value[idx] || 0)}`
         ].join('<br/>')
       }
     },
@@ -883,9 +885,10 @@ function buildClusteredFundingOptions () {
       shared: true,
       useHTML: true,
       formatter () {
-        const idx = this.points?.[0]?.point?.index ?? 0
-        const row = cashflowRows[idx]
         const yearLabel = this.x
+        const categories = xCategories.value
+        const idx = categories.indexOf(String(yearLabel))
+        const row = cashflowRows.value[idx] || {}
 
         const incomeBreakdown = [
           `Salary/Wages: ${formatCurrency(row.salaryWages || 0)}`,
@@ -906,10 +909,10 @@ function buildClusteredFundingOptions () {
         return [
           `<b>${yearLabel}</b>`,
           '<br/><b>Income</b>',
-          `Total income: ${formatCurrency(totalIncomeSeries.value[idx])}`,
+          `Total income: ${formatCurrency(totalIncomeSeries.value[idx] || 0)}`,
           incomeBreakdown,
           '<br/><b>Total target spending</b>',
-          `Total: ${formatCurrency(totalTargetSeries.value[idx])}`,
+          `Total: ${formatCurrency(totalTargetSeries.value[idx] || 0)}`,
           targetBreakdown
         ].join('<br/>')
       }
@@ -977,13 +980,14 @@ function buildAreaFundingOptions () {
       shared: true,
       useHTML: true,
       formatter () {
-        const idx = this.points?.[0]?.point?.index ?? 0
         const yearLabel = this.x
+        const categories = xCategories.value
+        const idx = categories.indexOf(String(yearLabel))
 
         return [
           `<b>${yearLabel}</b>`,
-          `Total spending: ${formatCurrency(totalSpendingSeries.value[idx])}`,
-          `Total target spending: ${formatCurrency(totalTargetSeries.value[idx])}`
+          `Total spending: ${formatCurrency(totalSpendingSeries.value[idx] || 0)}`,
+          `Total target spending: ${formatCurrency(totalTargetSeries.value[idx] || 0)}`
         ].join('<br/>')
       }
     },
@@ -1007,7 +1011,7 @@ function buildAreaFundingOptions () {
 
 // Build waterfall series for a given row index
 function buildWaterfallSeriesForIndex (idx) {
-  const row = cashflowRows[idx]
+  const row = cashflowRows.value[idx]
   if (!row) return []
 
   const salary = row.salaryWages || 0
@@ -1237,7 +1241,7 @@ onMounted(async () => {
     selectedFundingChartType.value = 'stacked'
   }
 
-  if (fundingChartOptions.value && cashflowRows.length > 0) {
+  if (fundingChartOptions.value && cashflowRows.value.length > 0) {
     chartInstance = Highcharts.chart('funding-chart-container', fundingChartOptions.value)
     await nextTick()
     // Wait a bit for chart to fully render and series colors to be available
@@ -1249,7 +1253,7 @@ onMounted(async () => {
 
 // Watch for chart type, timeline mode, and data changes - recreate chart when type changes
 watch([selectedFundingChartType, timelineMode, xCategories, fundingChartOptions], () => {
-  if (!cashflowRows.length) return
+  if (!cashflowRows.value.length) return
 
   // When chart type changes, destroy and recreate the chart
   if (chartInstance) {
